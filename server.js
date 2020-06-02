@@ -99,6 +99,113 @@ app.get("/all", async (req, res) => {
   await getData();
 });
 
+app.get("/getAllKml", async (req, res) => {
+  let kmlFilenames = [];
+  let geoJSONArr = [];
+  let arr = fs.readdirSync("./kml/", (err, files) => {
+    files.forEach((file) => {
+      kmlFilenames = kmlFilenames.concat(file);
+    });
+  });
+  for (let i = 0; i < arr.length; i++) {
+    var kml = new DOMParser().parseFromString(
+      fs.readFileSync(__dirname + `/kml/${arr[i]}`, "utf8")
+    );
+    var convertedWithStyles = tj.kml(kml, { styles: true });
+
+    geoJSONArr = geoJSONArr.concat(convertedWithStyles["features"]);
+  }
+
+  let returnArray = [];
+  async function getData(offset = "") {
+    let newOffset = "";
+
+    if (offset !== "") {
+      newOffset = `?offset=${offset}`;
+    }
+    return axios
+      .get(`${process.env.BASE_URL}Postcode%20lookup${newOffset}`, {
+        headers: {
+          Authorization: `Bearer ${process.env.API_KEY}`,
+        },
+      })
+      .then(function (response) {
+        returnArray = returnArray.concat(transformData(response.data.records));
+        if (response.data.offset !== undefined) {
+          return getData(response.data.offset);
+        }
+      });
+  }
+  await getData();
+
+  let arr1 = geoJSONArr.map((postcode) => {
+    if (postcode["geometry"]["type"] === "Polygon") {
+      return {
+        type: postcode["type"],
+        coordinates: postcode.geometry.coordinates[0].map((coordinatePair) => {
+          return { lng: coordinatePair[0], lat: coordinatePair[1] };
+        }),
+        properties: postcode["properties"],
+      };
+    } else {
+      return {
+        type: postcode["type"],
+        coordinates: [],
+        properties: postcode["properties"],
+      };
+    }
+  });
+  let kmlArrIDs = new Set(returnArray.map((properties) => properties.name));
+
+  console.log("filter arr", kmlArrIDs);
+  const compareArr = [
+    ...arr1.filter(({ properties }) => {
+      return !kmlArrIDs.has(properties.name);
+    }),
+  ];
+
+  console.log("filter arr", compareArr.length);
+
+  // console.log("airtable", kmlArrIDs);
+  // console.log(compareArr.length);
+  // res.send({
+  //   kmlRecords: geoJSONArr.map((postcode) => {
+  //     if (postcode["geometry"]["type"] === "Polygon") {
+  //       return {
+  //         type: postcode["type"],
+  //         coordinates: postcode.geometry.coordinates[0].map(
+  //           (coordinatePair) => {
+  //             return { lng: coordinatePair[0], lat: coordinatePair[1] };
+  //           }
+  //         ),
+  //         properties: postcode["properties"],
+  //       };
+  //     } else {
+  //       return {
+  //         type: postcode["type"],
+  //         coordinates: [],
+  //         properties: postcode["properties"],
+  //       };
+  //     }
+  //   }),
+  // });
+
+  // kmlFilenames.forEach((filename) => {
+  //   var kml = new DOMParser().parseFromString(
+  //     fs.readFileSync(__dirname + `/kml/${filename}`, "utf8")
+  //   );
+  //   var convertedWithStyles = tj.kml(kml, { styles: true });
+
+  //   geoJSONArr = geoJSONArr.push(convertedWithStyles["features"]);
+  //   console.log("geojson data", convertedWithStyles["features"]);
+  // });
+
+  // console.log(kmlFilenames);
+  // console.log(geoJSONArr);
+  // res.send({ records: geoJSONArr });
+  res.send({ postcode: compareArr });
+});
+
 app.get("/:id", (req, res) => {
   let [letter, num] = req.params.id.split(/([0-9]+)/);
   var kml = new DOMParser().parseFromString(
