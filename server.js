@@ -46,7 +46,7 @@ app.get("/", async (req, res) => {
       },
     })
     .then((data) => {
-      console.log("result", data);
+      // console.log("result", data.data.offset);
       let newData = data.data.records.map((record) => {
         return {
           id: record["id"],
@@ -55,12 +55,48 @@ app.get("/", async (req, res) => {
           name: record["fields"]["Name (from Geotarget)"][0],
         };
       });
-      res.send({ records: newData });
+      res.send({ records: newData, offset: data.data.offset });
     });
-  //   .catch((err) => res.send({ error: err }));
-  //   } catch (e) {
-  //     //     // res.send(e);
-  //   }
+});
+function transformData(arr) {
+  let newData = arr.map((record) => {
+    return {
+      id: record["id"],
+      countryCode: record["fields"]["Country Code (from Geotarget)"][0],
+      canonicalName: record["fields"]["Canonical Name (from Geotarget)"][0],
+      name: record["fields"]["Name (from Geotarget)"][0],
+    };
+  });
+
+  return newData;
+}
+
+app.get("/all", async (req, res) => {
+  let returnArray = [];
+  async function getData(offset = "") {
+    let newOffset = "";
+
+    if (offset !== "") {
+      newOffset = `?offset=${offset}`;
+    }
+    return axios
+      .get(`${process.env.BASE_URL}Postcode%20lookup${newOffset}`, {
+        headers: {
+          Authorization: `Bearer ${process.env.API_KEY}`,
+        },
+      })
+      .then(function (response) {
+        returnArray = returnArray.concat(transformData(response.data.records));
+        if (response.data.offset !== undefined) {
+          return getData(response.data.offset);
+        }
+        throw Error("Final page");
+      })
+      .catch(function () {
+        res.send({ records: returnArray });
+      });
+  }
+  await getData();
 });
 
 app.get("/:id", (req, res) => {
@@ -77,7 +113,7 @@ app.get("/:id", (req, res) => {
     postcode: convertedWithStyles["features"]
       .filter((area) => area["properties"]["name"] === `${letter}${num}`)
       .map((postcode) => {
-        console.log("coordinates", postcode);
+        // console.log("coordinates", postcode);
         return {
           type: postcode["type"],
           coordinates: postcode.geometry.coordinates[0].map(
